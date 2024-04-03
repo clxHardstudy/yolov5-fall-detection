@@ -1,0 +1,13 @@
+<RCC>
+  <qresource prefix="icons">
+    <file>登录.png</file>
+    <file>跌倒.png</file>
+    <file>关闭.png</file>
+    <file>摄像机.png</file>
+    <file>视频.png</file>
+    <file>缩小.png</file>
+    <file>图片.png</file>
+    <file>退出.png</file>
+    <file>注册.png</file>
+  </qresource>
+</RCC>

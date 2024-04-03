@@ -1,0 +1,3 @@
+pyuic5 LoginUi.ui -o LoginUi.py
+
+pyrcc5 input.qrc -o output.py
