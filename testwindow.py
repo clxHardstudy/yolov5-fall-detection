@@ -1,3 +1,7 @@
+import base64
+import time
+
+import requests
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtGui import *
 import os
@@ -10,7 +14,7 @@ from newui import res_rc
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
-from PyQt5.QtWidgets import QFileDialog, QMainWindow
+from PyQt5.QtWidgets import QFileDialog, QMainWindow, QMessageBox
 
 from newui.InterfaceUi import Ui_InterfaceWindow
 from newui.LoginUi import Ui_LoginWindow
@@ -34,6 +38,11 @@ from utils.torch_utils import load_classifier, select_device, time_sync
 class Ui_MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super().__init__()
+
+        self.fall_detected_time = None  # 记录跌倒检测时间
+        self.five_seconds_passed = False  # 标记是否超过了5秒
+        self.uploaded = False  # 标记是否已经上传图片
+
         self.device = '0'
         self.weights = "pretrained/best.pt"
         self.source = " "
@@ -368,6 +377,23 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         self.pushButton_Video.setText(_translate("InterfaceWindow", "Video"))
         self.pushButton_Carera.setText(_translate("InterfaceWindow", "Carera"))
 
+    def upload_image_to_minio(self, base64_img):
+        url = "http://127.0.0.1:8000/file/MinioFileBytes"
+        payload = {
+            "filebase64str": str(base64_img)
+        }
+        response = requests.post(url=url, json=payload)
+        if response.status_code == 200:
+            print("Image uploaded to Minio")
+        else:
+            print("Failed to upload image to Minio")
+
+    def detect_and_upload(self, im0):
+        _, img_buffer = cv2.imencode('.jpg', im0)
+        base64_img = base64.b64encode(img_buffer).decode('utf-8')
+        upload_thread = threading.Thread(target=self.upload_image_to_minio, args=(base64_img,))
+        upload_thread.start()
+
     def run(self, weights=ROOT / 'pretrained/best.pt',  # model.pt path(s)
             source=ROOT / 'data/images',  # file/dir/URL/glob, 0 for webcam
             imgsz=640,  # inference size (pixels)
@@ -494,11 +520,14 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
 
                         # Check if class is "Fall" and print message
                         if names[int(cls)] == 'Fall':
-                            print("Fall detected!")  # Print message when "Fall" is detected
-
-                # Print time (inference-only)
-                # print(f'{s}Done. ({t3 - t2:.3f}s)')
-
+                            if self.fall_detected_time is None:
+                                self.fall_detected_time = time.time()
+                            else:
+                                current_time = time.time()
+                                elapsed_time = current_time - self.fall_detected_time
+                                if elapsed_time >= 5:  # 如果时间超过5秒
+                                    self.detect_and_upload(im0)
+                                    self.fall_detected_time = None
                 # Stream results
                 self.im0 = annotator.result()
                 if view_img:
@@ -557,25 +586,67 @@ class LoginWindow(QMainWindow):
         self.setAttribute(Qt.WA_TranslucentBackground)
         # 添加阴影
         self.shadow = QtWidgets.QGraphicsDropShadowEffect(self)
-        self.shadow.setOffset(0,0)
+        self.shadow.setOffset(0, 0)
         self.shadow.setBlurRadius(15)
         self.shadow.setColor(Qt.black)
         self.ui.frame.setGraphicsEffect(self.shadow)
         # 登录点击展示窗口
-        self.ui.pushButton_Login.clicked.connect(lambda:self.ui.stackedWidget_2.setCurrentIndex(1))
+        self.ui.pushButton_Login.clicked.connect(lambda: self.ui.stackedWidget_2.setCurrentIndex(1))
         # 注册点击展示窗口
-        self.ui.pushButton_Register.clicked.connect(lambda:self.ui.stackedWidget_2.setCurrentIndex(0))
+        self.ui.pushButton_Register.clicked.connect(lambda: self.ui.stackedWidget_2.setCurrentIndex(0))
         self.ui.pushButton_L_Sure.clicked.connect(self.login_in)
+        self.ui.pushButton_R_Sure.clicked.connect(self.register)
         self.show()
 
     def login_in(self):
-        user = self.ui.lineEdit_L_Account.text()
-        password = self.ui.lineEdit_L_Password.text()
-        if user =="clx" and password == "020905":
+        username = self.ui.lineEdit_L_Account.text().replace(" ", "")
+        password = self.ui.lineEdit_L_Password.text().replace(" ", "")
+        if username == "" or password == "":
+            QMessageBox.warning(self, "登录失败", "账号或密码是必要的！", QMessageBox.Ok)
+            return
+        url = "http://127.0.0.1:8000/user/login"
+        payload = {
+            "username": username,
+            "password": password,
+        }
+        response = requests.post(url=url, json=payload)
+        if response.json()["status_code"] == 200:
             self.win = Ui_MainWindow()
             self.close()
+        elif response.json()["status_code"] == 404:
+            QMessageBox.warning(self, "登录失败", "用户不存在！", QMessageBox.Ok)
+        elif response.json()["status_code"] == 401:
+            QMessageBox.warning(self, "登录失败", "账号或密码错误！", QMessageBox.Ok)
         else:
-            print("wrong!")
+            QMessageBox.warning(self, "登录失败", "后端接口服务异常，请检查后端程序！", QMessageBox.Ok)
+
+    def register(self):
+        username = self.ui.lineEdit_R_Account.text().replace(" ", "")
+        password1 = self.ui.lineEdit_R_Password1.text().replace(" ", "")
+        password2 = self.ui.lineEdit_R_Password2.text().replace(" ", "")
+        if username == "" or password1 == "" or password2 == "":
+            QMessageBox.warning(self, "注册失败", "账号或密码是必要的！", QMessageBox.Ok)
+            return
+        if password1 != password2:
+            QMessageBox.warning(self, "注册失败", "两次输入的密码不一致！！", QMessageBox.Ok)
+
+        url = "http://127.0.0.1:8000/user"
+        payload = {
+            "username": username,
+            "password": password1,
+        }
+        response = requests.post(url=url, json=payload)
+        print(response.json())
+        if response.json()["exist"] == "True":
+            QMessageBox.warning(self, "注册失败", "该用户已经存在！", QMessageBox.Ok)
+            return
+        else:
+            QMessageBox.warning(self, "注册成功", "请准备登录！", QMessageBox.Ok)
+            self.ui.lineEdit_R_Account.clear()
+            self.ui.lineEdit_R_Password1.clear()
+            self.ui.lineEdit_R_Password2.clear()
+            self.ui.pushButton_Login.click()
+
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)

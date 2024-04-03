@@ -1,16 +1,20 @@
-from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtGui import *
 import os
-import sys
-from pathlib import Path
-import threading
-from threading import Thread
-from PyQt5.QtCore import Qt
-from newui import res_rc
 import cv2
+import sys
+import time
 import torch
+import base64
+import requests
+import threading
+from newui import res_rc
+from pathlib import Path
+from PyQt5.QtGui import *
+from PyQt5.QtCore import Qt
+from threading import Thread
 import torch.backends.cudnn as cudnn
-from PyQt5.QtWidgets import QFileDialog
+from PyQt5 import QtCore, QtGui, QtWidgets
+from Ui_Window import Ui_FallDetectWindow, Ui_LoginWindow
+from PyQt5.QtWidgets import QFileDialog, QMainWindow, QMessageBox
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -28,9 +32,14 @@ from utils.torch_utils import load_classifier, select_device, time_sync
 
 
 @torch.no_grad()
-class Ui_MainWindow(QtWidgets.QMainWindow):
+class Ui_MainWindow(Ui_FallDetectWindow):
     def __init__(self, parent=None):
         super().__init__()
+
+        self.fall_detected_time = None  # 记录跌倒检测时间
+        self.five_seconds_passed = False  # 标记是否超过了5秒
+        self.uploaded = False  # 标记是否已经上传图片
+
         self.device = '0'
         self.weights = "pretrained/best.pt"
         self.source = " "
@@ -110,6 +119,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         self.label.setPixmap(pix.scaled(765, 595, Qt.KeepAspectRatio))
         print("initLogo")
 
+    # photo按键点击发生事件
     def button_photo_open(self):
         print('button_photo_open')
         img_name, _ = QtWidgets.QFileDialog.getOpenFileName(self, "选择图片", "",
@@ -120,6 +130,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
                                                   "view_img": True})
         thread1.start()
 
+    # video按键点击发生事件
     def button_video_open(self):
         print('button_video_open')
         if self.pushButton_Video.text() == "Stop":
@@ -144,6 +155,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
                                                   "view_img": True})
         thread1.start()
 
+    # camera按键点击发生事件
     def button_camera_open(self):
         if self.camflag == False:
             print('button_camera_open')
@@ -167,203 +179,22 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
                          kwargs={"weights": self.weights, "source": "0", "nosave": True, "view_img": True})
         thread2.start()
 
-    def setupUi(self, InterfaceWindow):
-        InterfaceWindow.setObjectName("InterfaceWindow")
-        InterfaceWindow.resize(1041, 700)
-        self.centralwidget = QtWidgets.QWidget(InterfaceWindow)
-        self.centralwidget.setObjectName("centralwidget")
-        self.frame = QtWidgets.QFrame(self.centralwidget)
-        self.frame.setGeometry(QtCore.QRect(19, 19, 1001, 661))
-        self.frame.setMinimumSize(QtCore.QSize(1001, 661))
-        self.frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame.setObjectName("frame")
-        self.verticalLayout = QtWidgets.QVBoxLayout(self.frame)
-        self.verticalLayout.setContentsMargins(0, 0, 0, 0)
-        self.verticalLayout.setSpacing(0)
-        self.verticalLayout.setObjectName("verticalLayout")
-        self.frame_2 = QtWidgets.QFrame(self.frame)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(1)
-        sizePolicy.setHeightForWidth(self.frame_2.sizePolicy().hasHeightForWidth())
-        self.frame_2.setSizePolicy(sizePolicy)
-        self.frame_2.setStyleSheet("background-color: rgb(255, 255, 255);\n"
-                                   "border-top-left-radius:20px;\n"
-                                   "border-top-right-radius:20px;\n"
-                                   "")
-        self.frame_2.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame_2.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame_2.setObjectName("frame_2")
-        self.horizontalLayout = QtWidgets.QHBoxLayout(self.frame_2)
-        self.horizontalLayout.setContentsMargins(0, 0, 0, 0)
-        self.horizontalLayout.setSpacing(0)
-        self.horizontalLayout.setObjectName("horizontalLayout")
-        self.frame_4 = QtWidgets.QFrame(self.frame_2)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.frame_4.sizePolicy().hasHeightForWidth())
-        self.frame_4.setSizePolicy(sizePolicy)
-        self.frame_4.setStyleSheet("border:none;\n"
-                                   "font: 12pt \"微软雅黑\";")
-        self.frame_4.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame_4.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame_4.setObjectName("frame_4")
-        self.horizontalLayout_2 = QtWidgets.QHBoxLayout(self.frame_4)
-        self.horizontalLayout_2.setObjectName("horizontalLayout_2")
-        self.pushButton = QtWidgets.QPushButton(self.frame_4)
-        icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap(":/icons/跌倒.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton.setIcon(icon)
-        self.pushButton.setIconSize(QtCore.QSize(35, 35))
-        self.pushButton.setObjectName("pushButton")
-        self.horizontalLayout_2.addWidget(self.pushButton, 0, QtCore.Qt.AlignLeft)
-        self.horizontalLayout.addWidget(self.frame_4)
-        self.frame_5 = QtWidgets.QFrame(self.frame_2)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.frame_5.sizePolicy().hasHeightForWidth())
-        self.frame_5.setSizePolicy(sizePolicy)
-        self.frame_5.setStyleSheet("QPushButton{\n"
-                                   "    border:none;\n"
-                                   "}\n"
-                                   "QPushButton:hover{\n"
-                                   "    padding-bottom:5px;\n"
-                                   "}")
-        self.frame_5.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame_5.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame_5.setObjectName("frame_5")
-        self.horizontalLayout_3 = QtWidgets.QHBoxLayout(self.frame_5)
-        self.horizontalLayout_3.setObjectName("horizontalLayout_3")
-        self.pushButton_2 = QtWidgets.QPushButton(self.frame_5)
-        self.pushButton_2.setText("")
-        icon1 = QtGui.QIcon()
-        icon1.addPixmap(QtGui.QPixmap(":/icons/退出.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton_2.setIcon(icon1)
-        self.pushButton_2.setIconSize(QtCore.QSize(30, 30))
-        self.pushButton_2.setObjectName("pushButton_2")
-        self.horizontalLayout_3.addWidget(self.pushButton_2)
-        self.pushButton_3 = QtWidgets.QPushButton(self.frame_5)
-        self.pushButton_3.setText("")
-        icon2 = QtGui.QIcon()
-        icon2.addPixmap(QtGui.QPixmap(":/icons/缩小.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton_3.setIcon(icon2)
-        self.pushButton_3.setIconSize(QtCore.QSize(30, 30))
-        self.pushButton_3.setObjectName("pushButton_3")
-        self.horizontalLayout_3.addWidget(self.pushButton_3)
-        self.pushButton_4 = QtWidgets.QPushButton(self.frame_5)
-        icon3 = QtGui.QIcon()
-        icon3.addPixmap(QtGui.QPixmap(":/icons/关闭.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton_4.setIcon(icon3)
-        self.pushButton_4.setIconSize(QtCore.QSize(30, 30))
-        self.pushButton_4.setObjectName("pushButton_4")
-        self.horizontalLayout_3.addWidget(self.pushButton_4)
-        self.horizontalLayout.addWidget(self.frame_5, 0, QtCore.Qt.AlignRight)
-        self.verticalLayout.addWidget(self.frame_2)
-        self.frame_3 = QtWidgets.QFrame(self.frame)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(10)
-        sizePolicy.setHeightForWidth(self.frame_3.sizePolicy().hasHeightForWidth())
-        self.frame_3.setSizePolicy(sizePolicy)
-        self.frame_3.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame_3.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame_3.setObjectName("frame_3")
-        self.horizontalLayout_4 = QtWidgets.QHBoxLayout(self.frame_3)
-        self.horizontalLayout_4.setContentsMargins(0, 0, 0, 0)
-        self.horizontalLayout_4.setSpacing(0)
-        self.horizontalLayout_4.setObjectName("horizontalLayout_4")
-        self.frame_6 = QtWidgets.QFrame(self.frame_3)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        sizePolicy.setHorizontalStretch(3)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.frame_6.sizePolicy().hasHeightForWidth())
-        self.frame_6.setSizePolicy(sizePolicy)
-        self.frame_6.setMinimumSize(QtCore.QSize(230, 597))
-        self.frame_6.setStyleSheet("#frame_6{\n"
-                                   "    background-color: qlineargradient(spread:pad, x1:0.179, y1:0.982955, x2:1, y2:0, stop:0 rgba(153, 34, 57, 254), stop:1 rgba(255, 255, 255, 255));\n"
-                                   "    border-bottom-left-radius:20px;\n"
-                                   "}\n"
-                                   "QPushButton{\n"
-                                   "    border:none;\n"
-                                   "    font-size:20px;        \n"
-                                   "}\n"
-                                   "QPushButton:pressed{\n"
-                                   "    padding-top:4px;\n"
-                                   "    padding-left:5px;\n"
-                                   "\n"
-                                   "}")
-        self.frame_6.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame_6.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame_6.setObjectName("frame_6")
-        self.verticalLayout_2 = QtWidgets.QVBoxLayout(self.frame_6)
-        self.verticalLayout_2.setObjectName("verticalLayout_2")
-        self.pushButton_Photo = QtWidgets.QPushButton(self.frame_6)
-        self.pushButton_Photo.setStyleSheet("")
-        icon4 = QtGui.QIcon()
-        icon4.addPixmap(QtGui.QPixmap(":/icons/图片.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton_Photo.setIcon(icon4)
-        self.pushButton_Photo.setIconSize(QtCore.QSize(30, 30))
-        self.pushButton_Photo.setObjectName("pushButton_Photo")
-        self.verticalLayout_2.addWidget(self.pushButton_Photo)
-        self.pushButton_Video = QtWidgets.QPushButton(self.frame_6)
-        icon5 = QtGui.QIcon()
-        icon5.addPixmap(QtGui.QPixmap(":/icons/视频.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton_Video.setIcon(icon5)
-        self.pushButton_Video.setIconSize(QtCore.QSize(30, 30))
-        self.pushButton_Video.setObjectName("pushButton_Video")
-        self.verticalLayout_2.addWidget(self.pushButton_Video)
-        self.pushButton_Carera = QtWidgets.QPushButton(self.frame_6)
-        icon6 = QtGui.QIcon()
-        icon6.addPixmap(QtGui.QPixmap(":/icons/摄像机.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton_Carera.setIcon(icon6)
-        self.pushButton_Carera.setIconSize(QtCore.QSize(40, 40))
-        self.pushButton_Carera.setObjectName("pushButton_Carera")
-        self.verticalLayout_2.addWidget(self.pushButton_Carera)
-        self.horizontalLayout_4.addWidget(self.frame_6)
-        self.frame_7 = QtWidgets.QFrame(self.frame_3)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        sizePolicy.setHorizontalStretch(10)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.frame_7.sizePolicy().hasHeightForWidth())
-        self.frame_7.setSizePolicy(sizePolicy)
-        self.frame_7.setStyleSheet("")
-        self.frame_7.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame_7.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame_7.setObjectName("frame_7")
-        self.horizontalLayout_5 = QtWidgets.QHBoxLayout(self.frame_7)
-        self.horizontalLayout_5.setContentsMargins(0, 0, 0, 0)
-        self.horizontalLayout_5.setSpacing(0)
-        self.horizontalLayout_5.setObjectName("horizontalLayout_5")
-        self.label = QtWidgets.QLabel(self.frame_7)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
-        self.label.setSizePolicy(sizePolicy)
-        self.label.setMinimumSize(QtCore.QSize(765, 595))
-        self.label.setStyleSheet("background-color: rgb(255, 255, 255);")
-        self.label.setText("")
-        self.label.setObjectName("label")
-        self.horizontalLayout_5.addWidget(self.label)
-        self.horizontalLayout_4.addWidget(self.frame_7)
-        self.verticalLayout.addWidget(self.frame_3)
-        InterfaceWindow.setCentralWidget(self.centralwidget)
+    def upload_image_to_minio(self, base64_img):
+        url = "http://127.0.0.1:8000/file/MinioFileBytes"
+        payload = {
+            "filebase64str": str(base64_img)
+        }
+        response = requests.post(url=url, json=payload)
+        if response.status_code == 200:
+            print("Image uploaded to Minio")
+        else:
+            print("Failed to upload image to Minio")
 
-        self.retranslateUi(InterfaceWindow)
-        self.pushButton_4.clicked.connect(InterfaceWindow.close)
-        self.pushButton_3.clicked.connect(InterfaceWindow.showMinimized)
-        QtCore.QMetaObject.connectSlotsByName(InterfaceWindow)
-
-    def retranslateUi(self, InterfaceWindow):
-        _translate = QtCore.QCoreApplication.translate
-        InterfaceWindow.setWindowTitle(_translate("InterfaceWindow", "MainWindow"))
-        self.pushButton.setText(_translate("InterfaceWindow", "Fall-Detection"))
-        self.pushButton_Photo.setText(_translate("InterfaceWindow", "Photo"))
-        self.pushButton_Video.setText(_translate("InterfaceWindow", "Video"))
-        self.pushButton_Carera.setText(_translate("InterfaceWindow", "Carera"))
+    def detect_and_upload(self, im0):
+        _, img_buffer = cv2.imencode('.jpg', im0)
+        base64_img = base64.b64encode(img_buffer).decode('utf-8')
+        upload_thread = threading.Thread(target=self.upload_image_to_minio, args=(base64_img,))
+        upload_thread.start()
 
     def run(self, weights=ROOT / 'pretrained/best.pt',  # model.pt path(s)
             source=ROOT / 'data/images',  # file/dir/URL/glob, 0 for webcam
@@ -491,11 +322,19 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
 
                         # Check if class is "Fall" and print message
                         if names[int(cls)] == 'Fall':
-                            print("Fall detected!")  # Print message when "Fall" is detected
-
-                # Print time (inference-only)
-                # print(f'{s}Done. ({t3 - t2:.3f}s)')
-
+                            if self.fall_detected_time is None:
+                                # 给跌倒时刻赋一个初始值
+                                self.fall_detected_time = time.time()
+                            else:
+                                current_time = time.time()
+                                elapsed_time = current_time - self.fall_detected_time
+                                if elapsed_time >= 5:  # 如果时间超过5秒
+                                    # 上传图片到minio
+                                    self.detect_and_upload(im0)
+                                    self.fall_detected_time = None
+                        # 必须是持续的5s才可以上传一次图片：这个else防止了第一次fall之后很长时间之后又fall了一次的情况
+                        else:
+                            self.fall_detected_time = None
                 # Stream results
                 self.im0 = annotator.result()
                 if view_img:
@@ -544,7 +383,79 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
             self.initLogo()
 
 
+class LoginWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.ui = Ui_LoginWindow()
+        self.ui.setupUi(self)
+        # 隐藏多余的窗体
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        # 添加阴影
+        self.shadow = QtWidgets.QGraphicsDropShadowEffect(self)
+        self.shadow.setOffset(0, 0)
+        self.shadow.setBlurRadius(15)
+        self.shadow.setColor(Qt.black)
+        self.ui.frame.setGraphicsEffect(self.shadow)
+        # 登录点击展示窗口
+        self.ui.pushButton_Login.clicked.connect(lambda: self.ui.stackedWidget_2.setCurrentIndex(1))
+        # 注册点击展示窗口
+        self.ui.pushButton_Register.clicked.connect(lambda: self.ui.stackedWidget_2.setCurrentIndex(0))
+        self.ui.pushButton_L_Sure.clicked.connect(self.login_in)
+        self.ui.pushButton_R_Sure.clicked.connect(self.register)
+        self.show()
+
+    def login_in(self):
+        username = self.ui.lineEdit_L_Account.text().replace(" ", "")
+        password = self.ui.lineEdit_L_Password.text().replace(" ", "")
+        if username == "" or password == "":
+            QMessageBox.warning(self, "登录失败", "账号或密码是必要的！", QMessageBox.Ok)
+            return
+        url = "http://127.0.0.1:8000/user/login"
+        payload = {
+            "username": username,
+            "password": password,
+        }
+        response = requests.post(url=url, json=payload)
+        if response.json()["status_code"] == 200:
+            self.win = Ui_MainWindow()
+            self.close()
+        elif response.json()["status_code"] == 404:
+            QMessageBox.warning(self, "登录失败", "用户不存在！", QMessageBox.Ok)
+        elif response.json()["status_code"] == 401:
+            QMessageBox.warning(self, "登录失败", "账号或密码错误！", QMessageBox.Ok)
+        else:
+            QMessageBox.warning(self, "登录失败", "后端接口服务异常，请检查后端程序！", QMessageBox.Ok)
+
+    def register(self):
+        username = self.ui.lineEdit_R_Account.text().replace(" ", "")
+        password1 = self.ui.lineEdit_R_Password1.text().replace(" ", "")
+        password2 = self.ui.lineEdit_R_Password2.text().replace(" ", "")
+        if username == "" or password1 == "" or password2 == "":
+            QMessageBox.warning(self, "注册失败", "账号或密码是必要的！", QMessageBox.Ok)
+            return
+        if password1 != password2:
+            QMessageBox.warning(self, "注册失败", "两次输入的密码不一致！！", QMessageBox.Ok)
+
+        url = "http://127.0.0.1:8000/user"
+        payload = {
+            "username": username,
+            "password": password1,
+        }
+        response = requests.post(url=url, json=payload)
+        print(response.json())
+        if response.json()["exist"] == "True":
+            QMessageBox.warning(self, "注册失败", "该用户已经存在！", QMessageBox.Ok)
+            return
+        else:
+            QMessageBox.warning(self, "注册成功", "请准备登录！", QMessageBox.Ok)
+            self.ui.lineEdit_R_Account.clear()
+            self.ui.lineEdit_R_Password1.clear()
+            self.ui.lineEdit_R_Password2.clear()
+            self.ui.pushButton_Login.click()
+
+
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
-    ui = Ui_MainWindow()
+    ui = LoginWindow()
     sys.exit(app.exec_())

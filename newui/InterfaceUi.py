@@ -59,7 +59,7 @@ class Ui_InterfaceWindow(object):
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")
         self.pushButton = QtWidgets.QPushButton(self.frame_4)
         icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap(":/icons/fall.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        icon.addPixmap(QtGui.QPixmap(":/icons/跌倒.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         self.pushButton.setIcon(icon)
         self.pushButton.setIconSize(QtCore.QSize(35, 35))
         self.pushButton.setObjectName("pushButton")
@@ -211,4 +211,4 @@ class Ui_InterfaceWindow(object):
         self.pushButton_Carera.setText(_translate("InterfaceWindow", "Carera"))
 
 
-# import res_rc
+from newui import res_rc
