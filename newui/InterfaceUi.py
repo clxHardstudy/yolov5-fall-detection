@@ -211,4 +211,4 @@ class Ui_InterfaceWindow(object):
         self.pushButton_Carera.setText(_translate("InterfaceWindow", "Carera"))
 
 
-import res_rc
+# import res_rc

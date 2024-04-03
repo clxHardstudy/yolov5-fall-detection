@@ -20,41 +20,41 @@ class Ui_LoginWindow(object):
         self.frame = QtWidgets.QFrame(self.centralwidget)
         self.frame.setGeometry(QtCore.QRect(50, 40, 361, 511))
         self.frame.setStyleSheet("#frame{\n"
-"background-color:qlineargradient(spread:pad, x1:0.711, y1:0.693182, x2:1, y2:0, stop:0 rgba(153, 34, 57, 254), stop:1 rgba(255, 255, 255, 255));\n"
-"border-radius:20px;\n"
-"}")
+                                 "background-color:qlineargradient(spread:pad, x1:0.711, y1:0.693182, x2:1, y2:0, stop:0 rgba(153, 34, 57, 254), stop:1 rgba(255, 255, 255, 255));\n"
+                                 "border-radius:20px;\n"
+                                 "}")
         self.frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.frame.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame.setObjectName("frame")
         self.label = QtWidgets.QLabel(self.frame)
         self.label.setGeometry(QtCore.QRect(60, 70, 241, 51))
         self.label.setStyleSheet("color:rgb(255, 255, 255);\n"
-"font: 87 16pt \"Arial Black\";")
+                                 "font: 87 16pt \"Arial Black\";")
         self.label.setObjectName("label")
         self.label_2 = QtWidgets.QLabel(self.frame)
         self.label_2.setGeometry(QtCore.QRect(10, 130, 341, 41))
         self.label_2.setStyleSheet("color:rgb(255, 255, 255);\n"
-"font: 87 16pt \"Arial Black\";")
+                                   "font: 87 16pt \"Arial Black\";")
         self.label_2.setObjectName("label_2")
         self.frame_2 = QtWidgets.QFrame(self.centralwidget)
         self.frame_2.setGeometry(QtCore.QRect(410, 70, 311, 451))
         self.frame_2.setStyleSheet("#frame_2{\n"
-"    background-color:rgb(255, 255, 255);\n"
-"    border-top-right-radius:20px;\n"
-"    border-bottom-right-radius:20px;\n"
-"}")
+                                   "    background-color:rgb(255, 255, 255);\n"
+                                   "    border-top-right-radius:20px;\n"
+                                   "    border-bottom-right-radius:20px;\n"
+                                   "}")
         self.frame_2.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.frame_2.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame_2.setObjectName("frame_2")
         self.pushButton = QtWidgets.QPushButton(self.frame_2)
         self.pushButton.setGeometry(QtCore.QRect(250, 10, 51, 28))
         self.pushButton.setStyleSheet("QPushButton{\n"
-"    border:none;\n"
-"}\n"
-"QPushButton::hover{\n"
-"    padding-bottom:5px\n"
-"}\n"
-"")
+                                      "    border:none;\n"
+                                      "}\n"
+                                      "QPushButton::hover{\n"
+                                      "    padding-bottom:5px\n"
+                                      "}\n"
+                                      "")
         self.pushButton.setText("")
         icon = QtGui.QIcon()
         icon.addPixmap(QtGui.QPixmap(":/icons/关闭.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
@@ -98,21 +98,21 @@ class Ui_LoginWindow(object):
         self.verticalLayout_4.setObjectName("verticalLayout_4")
         self.stackedWidget_2 = QtWidgets.QStackedWidget(self.frame_6)
         self.stackedWidget_2.setStyleSheet("QLineEdit{\n"
-"\n"
-"    background-color: rgba(255, 255, 255,0);\n"
-"    border:none;\n"
-"    border-bottom:1px solid black;\n"
-"}\n"
-"QPushButton{\n"
-"    background-color: rgb(0, 0, 0);\n"
-"    color: rgb(255, 255, 255);\n"
-"    border-radius:7px;\n"
-"}\n"
-"\n"
-"QPushButton:pressed{\n"
-"    padding-top:5px;\n"
-"    padding-left:5px;\n"
-"}")
+                                           "\n"
+                                           "    background-color: rgba(255, 255, 255,0);\n"
+                                           "    border:none;\n"
+                                           "    border-bottom:1px solid black;\n"
+                                           "}\n"
+                                           "QPushButton{\n"
+                                           "    background-color: rgb(0, 0, 0);\n"
+                                           "    color: rgb(255, 255, 255);\n"
+                                           "    border-radius:7px;\n"
+                                           "}\n"
+                                           "\n"
+                                           "QPushButton:pressed{\n"
+                                           "    padding-top:5px;\n"
+                                           "    padding-left:5px;\n"
+                                           "}")
         self.stackedWidget_2.setObjectName("stackedWidget_2")
         self.page_Login = QtWidgets.QWidget()
         self.page_Login.setObjectName("page_Login")
@@ -167,12 +167,12 @@ class Ui_LoginWindow(object):
         sizePolicy.setHeightForWidth(self.frame_7.sizePolicy().hasHeightForWidth())
         self.frame_7.setSizePolicy(sizePolicy)
         self.frame_7.setStyleSheet("QPushButton{\n"
-"    border:none;\n"
-"}\n"
-"QPushButton:pressed{\n"
-"    padding-top:5px;\n"
-"    padding-left:5px;\n"
-"}")
+                                   "    border:none;\n"
+                                   "}\n"
+                                   "QPushButton:pressed{\n"
+                                   "    padding-top:5px;\n"
+                                   "    padding-left:5px;\n"
+                                   "}")
         self.frame_7.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.frame_7.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame_7.setObjectName("frame_7")
@@ -248,4 +248,6 @@ class Ui_LoginWindow(object):
         self.lineEdit_L_Account.setPlaceholderText(_translate("LoginWindow", "账号："))
         self.lineEdit_L_Password.setPlaceholderText(_translate("LoginWindow", "密码："))
         self.pushButton_L_Sure.setText(_translate("LoginWindow", "确认"))
-import res_rc
+
+
+# import res_rc
