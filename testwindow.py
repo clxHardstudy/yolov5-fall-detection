@@ -231,7 +231,8 @@ class Ui_MainWindow(Ui_FallDetectWindow):
             augment=False,  # augmented inference
             visualize=False,  # visualize features
             update=False,  # update all models
-            project=ROOT / 'runs/detect',  # save results to project/name
+            # project=ROOT / 'runs/detect',  # save results to project/name
+            project=None,  # save results to project/name
             name='exp',  # save results to project/name
             exist_ok=False,  # existing project/name ok, do not increment
             line_thickness=3,  # bounding box thickness (pixels)
@@ -450,9 +451,26 @@ class HomeWindow(Ui_HomeWindow):
         # "http://127.0.0.1:8000/file//file/minio/202404/04/040909187098.jpg/uri",
 
 
+class loadManager(QObject):
+    load_completed = pyqtSignal(QPixmap, str, int, int)  # 定义一个上传完成的信号，传递上传的 URL
+
+    def load_image_from_url(self, url, row, col):
+        response = requests.get(url)
+        if response.status_code == 200:
+            image = QtGui.QImage()
+            image.loadFromData(response.content)
+            pixmap = QtGui.QPixmap.fromImage(image)
+            self.load_completed.emit(pixmap, url, row, col)  # 上传完成，发射信号，传递上传的 URL
+        else:
+            print("Failed to load image from URL:", url)
+            return None
+
+
 class FallImagesWindow(Ui_FallimagesWindow):
     def __init__(self, image_urls):
         super().__init__()
+        self.row = 0
+        self.col = 0
         self.ui = Ui_FallimagesWindow()
         self.ui.setupUi(self)
         # 隐藏多余的窗体
@@ -460,54 +478,47 @@ class FallImagesWindow(Ui_FallimagesWindow):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.ui.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # 禁用水平滚动条
         # 加载图片
-        self.load_images(image_urls)
         self.show()
+        self.load_images(image_urls)
 
     def load_images(self, image_urls):
-        row = 0
-        col = 0
         for url in image_urls:
-            pixmap = self.load_image_from_url(url)
-            if pixmap:
-                # 创建垂直布局
-                layout = QVBoxLayout()
+            load_manager = loadManager()
+            # 连接信号和槽
+            load_manager.load_completed.connect(self.setlay)
+            # 在子线程中执行上传操作
+            threading.Thread(target=load_manager.load_image_from_url, args=(url, self.row, self.col)).start()
+            self.col += 1
+            if self.col == 3:
+                self.col = 0
+                self.row += 1
 
-                # 添加图片到布局
-                label = QLabel()
-                label.setFixedSize(200, 200)  # 设置固定大小为200x200像素
-                label.setPixmap(pixmap.scaled(label.size(), Qt.KeepAspectRatio))
-                label.setAlignment(Qt.AlignCenter)  # 设置居中对齐
-                layout.addWidget(label)
+    def setlay(self, pixmap, url, row, col):
+        if pixmap:
+            # 创建垂直布局
+            layout = QVBoxLayout()
 
-                # 添加图片名字到布局
-                name_label = QLabel(url.split('/')[-2])  # 从URL中获取图片名字
-                name_label.setAlignment(Qt.AlignCenter)  # 设置居中对齐
-                name_label.setWordWrap(True)  # 自动换行
-                name_label.setMaximumWidth(200)  # 设置最大宽度，超出部分自动隐藏
-                layout.addWidget(name_label)
+            # 添加图片到布局
+            label = QLabel()
+            label.setFixedSize(200, 200)  # 设置固定大小为200x200像素
+            label.setPixmap(pixmap.scaled(label.size(), Qt.KeepAspectRatio))
+            label.setAlignment(Qt.AlignCenter)  # 设置居中对齐
+            layout.addWidget(label)
 
-                # 添加一个垂直的空白项，使得图片名字距离图片边框下方的间距不会太大
-                spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-                layout.addItem(spacer)
+            # 添加图片名字到布局
+            name_label = QLabel(url.split('/')[-2])  # 从URL中获取图片名字
+            name_label.setAlignment(Qt.AlignCenter)  # 设置居中对齐
+            name_label.setWordWrap(True)  # 自动换行
+            name_label.setMaximumWidth(200)  # 设置最大宽度，超出部分自动隐藏
+            layout.addWidget(name_label)
 
-                # 将布局添加到 gridLayout
-                self.ui.gridLayout.addLayout(layout, row, col)
+            # 添加一个垂直的空白项，使得图片名字距离图片边框下方的间距不会太大
+            spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+            layout.addItem(spacer)
 
-                col += 1
-                if col == 3:  # 每行展示三张图片
-                    col = 0
-                    row += 1  # 换行
+            # 将布局添加到 gridLayout
+            self.ui.gridLayout.addLayout(layout, row, col)
 
-    def load_image_from_url(self, url):
-        response = requests.get(url)
-        if response.status_code == 200:
-            image = QtGui.QImage()
-            image.loadFromData(response.content)
-            pixmap = QtGui.QPixmap.fromImage(image)
-            return pixmap  # 不再进行缩放
-        else:
-            print("Failed to load image from URL:", url)
-            return None
 
 
 class LoginWindow(QMainWindow):

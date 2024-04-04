@@ -231,7 +231,8 @@ class Ui_MainWindow(Ui_FallDetectWindow):
             augment=False,  # augmented inference
             visualize=False,  # visualize features
             update=False,  # update all models
-            project=ROOT / 'runs/detect',  # save results to project/name
+            # project=ROOT / 'runs/detect',  # save results to project/name
+            project=None,  # save results to project/name
             name='exp',  # save results to project/name
             exist_ok=False,  # existing project/name ok, do not increment
             line_thickness=3,  # bounding box thickness (pixels)
