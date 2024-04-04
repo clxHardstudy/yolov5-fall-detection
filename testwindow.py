@@ -1,23 +1,22 @@
-import base64
-import time
-
-import requests
-from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtGui import *
 import os
-import sys
-from pathlib import Path
-import threading
-from threading import Thread
-from PyQt5.QtCore import Qt
-from newui import res_rc
 import cv2
+import sys
+import time
 import torch
+import base64
+import requests
+import threading
+from newui import res_rc
+from pathlib import Path
+from PyQt5.QtGui import *
+from PyQt5.QtCore import Qt, QObject, pyqtSignal
+from threading import Thread
 import torch.backends.cudnn as cudnn
-from PyQt5.QtWidgets import QFileDialog, QMainWindow, QMessageBox
+from PyQt5 import QtCore, QtGui, QtWidgets
+from Ui_Window import Ui_FallDetectWindow, Ui_LoginWindow, Ui_HomeWindow, Ui_FallimagesWindow
+from PyQt5.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QLabel, QSizePolicy, QVBoxLayout, QSpacerItem
 
-from newui.InterfaceUi import Ui_InterfaceWindow
-from newui.LoginUi import Ui_LoginWindow
+from sendEmail import send_email
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -34,14 +33,31 @@ from utils.plots import Annotator, colors
 from utils.torch_utils import load_classifier, select_device, time_sync
 
 
+class UploadManager(QObject):
+    upload_completed = pyqtSignal(str)  # 定义一个上传完成的信号，传递上传的 URL
+
+    def upload_image_to_minio(self, base64_img):
+        url = "http://127.0.0.1:8000/file/MinioFileBytes"
+        payload = {
+            "filebase64str": str(base64_img)
+        }
+        response = requests.post(url=url, json=payload)
+        if response.status_code == 200:
+            data = response.json()
+            uri = data["uri"]
+            url = "http://127.0.0.1:8000/file" + uri + "/uri"
+            print("Image uploaded to Minio")
+            self.upload_completed.emit(url)  # 上传完成，发射信号，传递上传的 URL
+        else:
+            print("Failed to upload image to Minio")
+
+
 @torch.no_grad()
-class Ui_MainWindow(QtWidgets.QMainWindow):
+class Ui_MainWindow(Ui_FallDetectWindow):
     def __init__(self, parent=None):
         super().__init__()
 
         self.fall_detected_time = None  # 记录跌倒检测时间
-        self.five_seconds_passed = False  # 标记是否超过了5秒
-        self.uploaded = False  # 标记是否已经上传图片
 
         self.device = '0'
         self.weights = "pretrained/best.pt"
@@ -122,6 +138,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         self.label.setPixmap(pix.scaled(765, 595, Qt.KeepAspectRatio))
         print("initLogo")
 
+    # photo按键点击发生事件
     def button_photo_open(self):
         print('button_photo_open')
         img_name, _ = QtWidgets.QFileDialog.getOpenFileName(self, "选择图片", "",
@@ -132,6 +149,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
                                                   "view_img": True})
         thread1.start()
 
+    # video按键点击发生事件
     def button_video_open(self):
         print('button_video_open')
         if self.pushButton_Video.text() == "Stop":
@@ -156,6 +174,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
                                                   "view_img": True})
         thread1.start()
 
+    # camera按键点击发生事件
     def button_camera_open(self):
         if self.camflag == False:
             print('button_camera_open')
@@ -179,219 +198,20 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
                          kwargs={"weights": self.weights, "source": "0", "nosave": True, "view_img": True})
         thread2.start()
 
-    def setupUi(self, InterfaceWindow):
-        InterfaceWindow.setObjectName("InterfaceWindow")
-        InterfaceWindow.resize(1041, 700)
-        self.centralwidget = QtWidgets.QWidget(InterfaceWindow)
-        self.centralwidget.setObjectName("centralwidget")
-        self.frame = QtWidgets.QFrame(self.centralwidget)
-        self.frame.setGeometry(QtCore.QRect(19, 19, 1001, 661))
-        self.frame.setMinimumSize(QtCore.QSize(1001, 661))
-        self.frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame.setObjectName("frame")
-        self.verticalLayout = QtWidgets.QVBoxLayout(self.frame)
-        self.verticalLayout.setContentsMargins(0, 0, 0, 0)
-        self.verticalLayout.setSpacing(0)
-        self.verticalLayout.setObjectName("verticalLayout")
-        self.frame_2 = QtWidgets.QFrame(self.frame)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(1)
-        sizePolicy.setHeightForWidth(self.frame_2.sizePolicy().hasHeightForWidth())
-        self.frame_2.setSizePolicy(sizePolicy)
-        self.frame_2.setStyleSheet("background-color: rgb(255, 255, 255);\n"
-                                   "border-top-left-radius:20px;\n"
-                                   "border-top-right-radius:20px;\n"
-                                   "")
-        self.frame_2.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame_2.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame_2.setObjectName("frame_2")
-        self.horizontalLayout = QtWidgets.QHBoxLayout(self.frame_2)
-        self.horizontalLayout.setContentsMargins(0, 0, 0, 0)
-        self.horizontalLayout.setSpacing(0)
-        self.horizontalLayout.setObjectName("horizontalLayout")
-        self.frame_4 = QtWidgets.QFrame(self.frame_2)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.frame_4.sizePolicy().hasHeightForWidth())
-        self.frame_4.setSizePolicy(sizePolicy)
-        self.frame_4.setStyleSheet("border:none;\n"
-                                   "font: 12pt \"微软雅黑\";")
-        self.frame_4.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame_4.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame_4.setObjectName("frame_4")
-        self.horizontalLayout_2 = QtWidgets.QHBoxLayout(self.frame_4)
-        self.horizontalLayout_2.setObjectName("horizontalLayout_2")
-        self.pushButton = QtWidgets.QPushButton(self.frame_4)
-        icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap(":/icons/跌倒.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton.setIcon(icon)
-        self.pushButton.setIconSize(QtCore.QSize(35, 35))
-        self.pushButton.setObjectName("pushButton")
-        self.horizontalLayout_2.addWidget(self.pushButton, 0, QtCore.Qt.AlignLeft)
-        self.horizontalLayout.addWidget(self.frame_4)
-        self.frame_5 = QtWidgets.QFrame(self.frame_2)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.frame_5.sizePolicy().hasHeightForWidth())
-        self.frame_5.setSizePolicy(sizePolicy)
-        self.frame_5.setStyleSheet("QPushButton{\n"
-                                   "    border:none;\n"
-                                   "}\n"
-                                   "QPushButton:hover{\n"
-                                   "    padding-bottom:5px;\n"
-                                   "}")
-        self.frame_5.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame_5.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame_5.setObjectName("frame_5")
-        self.horizontalLayout_3 = QtWidgets.QHBoxLayout(self.frame_5)
-        self.horizontalLayout_3.setObjectName("horizontalLayout_3")
-        self.pushButton_2 = QtWidgets.QPushButton(self.frame_5)
-        self.pushButton_2.setText("")
-        icon1 = QtGui.QIcon()
-        icon1.addPixmap(QtGui.QPixmap(":/icons/退出.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton_2.setIcon(icon1)
-        self.pushButton_2.setIconSize(QtCore.QSize(30, 30))
-        self.pushButton_2.setObjectName("pushButton_2")
-        self.horizontalLayout_3.addWidget(self.pushButton_2)
-        self.pushButton_3 = QtWidgets.QPushButton(self.frame_5)
-        self.pushButton_3.setText("")
-        icon2 = QtGui.QIcon()
-        icon2.addPixmap(QtGui.QPixmap(":/icons/缩小.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton_3.setIcon(icon2)
-        self.pushButton_3.setIconSize(QtCore.QSize(30, 30))
-        self.pushButton_3.setObjectName("pushButton_3")
-        self.horizontalLayout_3.addWidget(self.pushButton_3)
-        self.pushButton_4 = QtWidgets.QPushButton(self.frame_5)
-        icon3 = QtGui.QIcon()
-        icon3.addPixmap(QtGui.QPixmap(":/icons/关闭.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton_4.setIcon(icon3)
-        self.pushButton_4.setIconSize(QtCore.QSize(30, 30))
-        self.pushButton_4.setObjectName("pushButton_4")
-        self.horizontalLayout_3.addWidget(self.pushButton_4)
-        self.horizontalLayout.addWidget(self.frame_5, 0, QtCore.Qt.AlignRight)
-        self.verticalLayout.addWidget(self.frame_2)
-        self.frame_3 = QtWidgets.QFrame(self.frame)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(10)
-        sizePolicy.setHeightForWidth(self.frame_3.sizePolicy().hasHeightForWidth())
-        self.frame_3.setSizePolicy(sizePolicy)
-        self.frame_3.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame_3.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame_3.setObjectName("frame_3")
-        self.horizontalLayout_4 = QtWidgets.QHBoxLayout(self.frame_3)
-        self.horizontalLayout_4.setContentsMargins(0, 0, 0, 0)
-        self.horizontalLayout_4.setSpacing(0)
-        self.horizontalLayout_4.setObjectName("horizontalLayout_4")
-        self.frame_6 = QtWidgets.QFrame(self.frame_3)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        sizePolicy.setHorizontalStretch(3)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.frame_6.sizePolicy().hasHeightForWidth())
-        self.frame_6.setSizePolicy(sizePolicy)
-        self.frame_6.setMinimumSize(QtCore.QSize(230, 597))
-        self.frame_6.setStyleSheet("#frame_6{\n"
-                                   "    background-color: qlineargradient(spread:pad, x1:0.179, y1:0.982955, x2:1, y2:0, stop:0 rgba(153, 34, 57, 254), stop:1 rgba(255, 255, 255, 255));\n"
-                                   "    border-bottom-left-radius:20px;\n"
-                                   "}\n"
-                                   "QPushButton{\n"
-                                   "    border:none;\n"
-                                   "    font-size:20px;        \n"
-                                   "}\n"
-                                   "QPushButton:pressed{\n"
-                                   "    padding-top:4px;\n"
-                                   "    padding-left:5px;\n"
-                                   "\n"
-                                   "}")
-        self.frame_6.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame_6.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame_6.setObjectName("frame_6")
-        self.verticalLayout_2 = QtWidgets.QVBoxLayout(self.frame_6)
-        self.verticalLayout_2.setObjectName("verticalLayout_2")
-        self.pushButton_Photo = QtWidgets.QPushButton(self.frame_6)
-        self.pushButton_Photo.setStyleSheet("")
-        icon4 = QtGui.QIcon()
-        icon4.addPixmap(QtGui.QPixmap(":/icons/图片.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton_Photo.setIcon(icon4)
-        self.pushButton_Photo.setIconSize(QtCore.QSize(30, 30))
-        self.pushButton_Photo.setObjectName("pushButton_Photo")
-        self.verticalLayout_2.addWidget(self.pushButton_Photo)
-        self.pushButton_Video = QtWidgets.QPushButton(self.frame_6)
-        icon5 = QtGui.QIcon()
-        icon5.addPixmap(QtGui.QPixmap(":/icons/视频.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton_Video.setIcon(icon5)
-        self.pushButton_Video.setIconSize(QtCore.QSize(30, 30))
-        self.pushButton_Video.setObjectName("pushButton_Video")
-        self.verticalLayout_2.addWidget(self.pushButton_Video)
-        self.pushButton_Carera = QtWidgets.QPushButton(self.frame_6)
-        icon6 = QtGui.QIcon()
-        icon6.addPixmap(QtGui.QPixmap(":/icons/摄像机.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.pushButton_Carera.setIcon(icon6)
-        self.pushButton_Carera.setIconSize(QtCore.QSize(40, 40))
-        self.pushButton_Carera.setObjectName("pushButton_Carera")
-        self.verticalLayout_2.addWidget(self.pushButton_Carera)
-        self.horizontalLayout_4.addWidget(self.frame_6)
-        self.frame_7 = QtWidgets.QFrame(self.frame_3)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        sizePolicy.setHorizontalStretch(10)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.frame_7.sizePolicy().hasHeightForWidth())
-        self.frame_7.setSizePolicy(sizePolicy)
-        self.frame_7.setStyleSheet("")
-        self.frame_7.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.frame_7.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.frame_7.setObjectName("frame_7")
-        self.horizontalLayout_5 = QtWidgets.QHBoxLayout(self.frame_7)
-        self.horizontalLayout_5.setContentsMargins(0, 0, 0, 0)
-        self.horizontalLayout_5.setSpacing(0)
-        self.horizontalLayout_5.setObjectName("horizontalLayout_5")
-        self.label = QtWidgets.QLabel(self.frame_7)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
-        self.label.setSizePolicy(sizePolicy)
-        self.label.setMinimumSize(QtCore.QSize(765, 595))
-        self.label.setStyleSheet("background-color: rgb(255, 255, 255);")
-        self.label.setText("")
-        self.label.setObjectName("label")
-        self.horizontalLayout_5.addWidget(self.label)
-        self.horizontalLayout_4.addWidget(self.frame_7)
-        self.verticalLayout.addWidget(self.frame_3)
-        InterfaceWindow.setCentralWidget(self.centralwidget)
-
-        self.retranslateUi(InterfaceWindow)
-        self.pushButton_4.clicked.connect(InterfaceWindow.close)
-        self.pushButton_3.clicked.connect(InterfaceWindow.showMinimized)
-        QtCore.QMetaObject.connectSlotsByName(InterfaceWindow)
-
-    def retranslateUi(self, InterfaceWindow):
-        _translate = QtCore.QCoreApplication.translate
-        InterfaceWindow.setWindowTitle(_translate("InterfaceWindow", "MainWindow"))
-        self.pushButton.setText(_translate("InterfaceWindow", "Fall-Detection"))
-        self.pushButton_Photo.setText(_translate("InterfaceWindow", "Photo"))
-        self.pushButton_Video.setText(_translate("InterfaceWindow", "Video"))
-        self.pushButton_Carera.setText(_translate("InterfaceWindow", "Carera"))
-
-    def upload_image_to_minio(self, base64_img):
-        url = "http://127.0.0.1:8000/file/MinioFileBytes"
-        payload = {
-            "filebase64str": str(base64_img)
-        }
-        response = requests.post(url=url, json=payload)
-        if response.status_code == 200:
-            print("Image uploaded to Minio")
-        else:
-            print("Failed to upload image to Minio")
+    def sendEmail(self, image_url):
+        print("准备发送邮件")
+        send_email_thread = threading.Thread(target=send_email, args=(image_url,))
+        send_email_thread.start()
 
     def detect_and_upload(self, im0):
         _, img_buffer = cv2.imencode('.jpg', im0)
         base64_img = base64.b64encode(img_buffer).decode('utf-8')
-        upload_thread = threading.Thread(target=self.upload_image_to_minio, args=(base64_img,))
+        # 创建 UploadManager 实例
+        upload_manager = UploadManager()
+        # 连接信号和槽
+        upload_manager.upload_completed.connect(self.sendEmail)
+        # 在子线程中执行上传操作
+        upload_thread = threading.Thread(target=upload_manager.upload_image_to_minio, args=(base64_img,))
         upload_thread.start()
 
     def run(self, weights=ROOT / 'pretrained/best.pt',  # model.pt path(s)
@@ -521,13 +341,18 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
                         # Check if class is "Fall" and print message
                         if names[int(cls)] == 'Fall':
                             if self.fall_detected_time is None:
+                                # 给跌倒时刻赋一个初始值
                                 self.fall_detected_time = time.time()
                             else:
                                 current_time = time.time()
                                 elapsed_time = current_time - self.fall_detected_time
-                                if elapsed_time >= 5:  # 如果时间超过5秒
+                                if elapsed_time >= 2:  # 如果时间超过2秒
+                                    # 上传图片到minio
                                     self.detect_and_upload(im0)
                                     self.fall_detected_time = None
+                        # 必须是持续的5s才可以上传一次图片：这个else防止了第一次fall之后很长时间之后又fall了一次的情况
+                        else:
+                            self.fall_detected_time = None
                 # Stream results
                 self.im0 = annotator.result()
                 if view_img:
@@ -576,6 +401,115 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
             self.initLogo()
 
 
+class HomeWindow(Ui_HomeWindow):
+    def __init__(self, parent=None):
+        super().__init__()
+        self.ui = Ui_HomeWindow()
+        self.ui.setupUi(self)
+        # 隐藏多余的窗体
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.ui.pushButton_Fall_Detection.installEventFilter(self)
+        self.ui.pushButton_Fall_Images.installEventFilter(self)
+        self.current_image_path = ""
+        self.show_image("newui/images/yolo.png")
+        self.ui.pushButton_Fall_Detection.clicked.connect(self.fall_detection)
+        self.ui.pushButton_Fall_Images.clicked.connect(self.fall_images)
+        self.show()
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.Enter:
+            if obj == self.ui.pushButton_Fall_Detection:
+                self.show_image("newui/images/Fall-Detection.png")
+            elif obj == self.ui.pushButton_Fall_Images:
+                self.show_image("newui/images/images.png")
+        elif event.type() == QtCore.QEvent.Leave:
+            self.show_image("newui/images/yolo.png")
+        return super().eventFilter(obj, event)
+
+    def show_image(self, image_path):
+        pixmap = QPixmap(image_path)
+        self.ui.Home_label.setPixmap(pixmap)
+        self.ui.Home_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.ui.Home_label.setScaledContents(True)  # 让 QLabel 自动缩放以适应图片大小
+        self.ui.Home_label.setMinimumSize(1, 1)  # 设置 QLabel 的最小尺寸以避免折叠
+
+    def fall_detection(self):
+        self.win = Ui_MainWindow()
+
+    def fall_images(self):
+        url = "http://127.0.0.1:8000/file/fall_images"
+        response = requests.get(url=url)
+        if response.json()["status_code"] == 200:
+            print(response.json())
+            uri_list = response.json()["uri_list"]
+            url_list = ["http://127.0.0.1:8000/file/" + uri + "/uri" for uri in uri_list]
+            print(url_list)
+        self.win = FallImagesWindow(url_list)
+        # self.close()
+        # "http://127.0.0.1:8000/file//file/minio/202404/04/040909187098.jpg/uri",
+
+
+class FallImagesWindow(Ui_FallimagesWindow):
+    def __init__(self, image_urls):
+        super().__init__()
+        self.ui = Ui_FallimagesWindow()
+        self.ui.setupUi(self)
+        # 隐藏多余的窗体
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.ui.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # 禁用水平滚动条
+        # 加载图片
+        self.load_images(image_urls)
+        self.show()
+
+    def load_images(self, image_urls):
+        row = 0
+        col = 0
+        for url in image_urls:
+            pixmap = self.load_image_from_url(url)
+            if pixmap:
+                # 创建垂直布局
+                layout = QVBoxLayout()
+
+                # 添加图片到布局
+                label = QLabel()
+                label.setFixedSize(200, 200)  # 设置固定大小为200x200像素
+                label.setPixmap(pixmap.scaled(label.size(), Qt.KeepAspectRatio))
+                label.setAlignment(Qt.AlignCenter)  # 设置居中对齐
+                layout.addWidget(label)
+
+                # 添加图片名字到布局
+                name_label = QLabel(url.split('/')[-2])  # 从URL中获取图片名字
+                name_label.setAlignment(Qt.AlignCenter)  # 设置居中对齐
+                name_label.setWordWrap(True)  # 自动换行
+                name_label.setMaximumWidth(200)  # 设置最大宽度，超出部分自动隐藏
+                layout.addWidget(name_label)
+
+                # 添加一个垂直的空白项，使得图片名字距离图片边框下方的间距不会太大
+                spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+                layout.addItem(spacer)
+
+                # 将布局添加到 gridLayout
+                self.ui.gridLayout.addLayout(layout, row, col)
+
+                col += 1
+                if col == 3:  # 每行展示三张图片
+                    col = 0
+                    row += 1  # 换行
+
+    def load_image_from_url(self, url):
+        response = requests.get(url)
+        if response.status_code == 200:
+            image = QtGui.QImage()
+            image.loadFromData(response.content)
+            pixmap = QtGui.QPixmap.fromImage(image)
+            return pixmap  # 不再进行缩放
+        else:
+            print("Failed to load image from URL:", url)
+            return None
+
+
 class LoginWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -611,7 +545,7 @@ class LoginWindow(QMainWindow):
         }
         response = requests.post(url=url, json=payload)
         if response.json()["status_code"] == 200:
-            self.win = Ui_MainWindow()
+            self.win = HomeWindow()
             self.close()
         elif response.json()["status_code"] == 404:
             QMessageBox.warning(self, "登录失败", "用户不存在！", QMessageBox.Ok)

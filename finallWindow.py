@@ -9,12 +9,14 @@ import threading
 from newui import res_rc
 from pathlib import Path
 from PyQt5.QtGui import *
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QObject, pyqtSignal
 from threading import Thread
 import torch.backends.cudnn as cudnn
 from PyQt5 import QtCore, QtGui, QtWidgets
-from Ui_Window import Ui_FallDetectWindow, Ui_LoginWindow
-from PyQt5.QtWidgets import QFileDialog, QMainWindow, QMessageBox
+from Ui_Window import Ui_FallDetectWindow, Ui_LoginWindow, Ui_HomeWindow, Ui_FallimagesWindow
+from PyQt5.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QLabel, QSizePolicy, QVBoxLayout, QSpacerItem
+
+from sendEmail import send_email
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -31,14 +33,31 @@ from utils.plots import Annotator, colors
 from utils.torch_utils import load_classifier, select_device, time_sync
 
 
+class UploadManager(QObject):
+    upload_completed = pyqtSignal(str)  # 定义一个上传完成的信号，传递上传的 URL
+
+    def upload_image_to_minio(self, base64_img):
+        url = "http://127.0.0.1:8000/file/MinioFileBytes"
+        payload = {
+            "filebase64str": str(base64_img)
+        }
+        response = requests.post(url=url, json=payload)
+        if response.status_code == 200:
+            data = response.json()
+            uri = data["uri"]
+            url = "http://127.0.0.1:8000/file" + uri + "/uri"
+            print("Image uploaded to Minio")
+            self.upload_completed.emit(url)  # 上传完成，发射信号，传递上传的 URL
+        else:
+            print("Failed to upload image to Minio")
+
+
 @torch.no_grad()
 class Ui_MainWindow(Ui_FallDetectWindow):
     def __init__(self, parent=None):
         super().__init__()
 
         self.fall_detected_time = None  # 记录跌倒检测时间
-        self.five_seconds_passed = False  # 标记是否超过了5秒
-        self.uploaded = False  # 标记是否已经上传图片
 
         self.device = '0'
         self.weights = "pretrained/best.pt"
@@ -179,21 +198,20 @@ class Ui_MainWindow(Ui_FallDetectWindow):
                          kwargs={"weights": self.weights, "source": "0", "nosave": True, "view_img": True})
         thread2.start()
 
-    def upload_image_to_minio(self, base64_img):
-        url = "http://127.0.0.1:8000/file/MinioFileBytes"
-        payload = {
-            "filebase64str": str(base64_img)
-        }
-        response = requests.post(url=url, json=payload)
-        if response.status_code == 200:
-            print("Image uploaded to Minio")
-        else:
-            print("Failed to upload image to Minio")
+    def sendEmail(self, image_url):
+        print("准备发送邮件")
+        send_email_thread = threading.Thread(target=send_email, args=(image_url,))
+        send_email_thread.start()
 
     def detect_and_upload(self, im0):
         _, img_buffer = cv2.imencode('.jpg', im0)
         base64_img = base64.b64encode(img_buffer).decode('utf-8')
-        upload_thread = threading.Thread(target=self.upload_image_to_minio, args=(base64_img,))
+        # 创建 UploadManager 实例
+        upload_manager = UploadManager()
+        # 连接信号和槽
+        upload_manager.upload_completed.connect(self.sendEmail)
+        # 在子线程中执行上传操作
+        upload_thread = threading.Thread(target=upload_manager.upload_image_to_minio, args=(base64_img,))
         upload_thread.start()
 
     def run(self, weights=ROOT / 'pretrained/best.pt',  # model.pt path(s)
@@ -328,7 +346,7 @@ class Ui_MainWindow(Ui_FallDetectWindow):
                             else:
                                 current_time = time.time()
                                 elapsed_time = current_time - self.fall_detected_time
-                                if elapsed_time >= 5:  # 如果时间超过5秒
+                                if elapsed_time >= 2:  # 如果时间超过2秒
                                     # 上传图片到minio
                                     self.detect_and_upload(im0)
                                     self.fall_detected_time = None
@@ -383,6 +401,115 @@ class Ui_MainWindow(Ui_FallDetectWindow):
             self.initLogo()
 
 
+class HomeWindow(Ui_HomeWindow):
+    def __init__(self, parent=None):
+        super().__init__()
+        self.ui = Ui_HomeWindow()
+        self.ui.setupUi(self)
+        # 隐藏多余的窗体
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.ui.pushButton_Fall_Detection.installEventFilter(self)
+        self.ui.pushButton_Fall_Images.installEventFilter(self)
+        self.current_image_path = ""
+        self.show_image("newui/images/yolo.png")
+        self.ui.pushButton_Fall_Detection.clicked.connect(self.fall_detection)
+        self.ui.pushButton_Fall_Images.clicked.connect(self.fall_images)
+        self.show()
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.Enter:
+            if obj == self.ui.pushButton_Fall_Detection:
+                self.show_image("newui/images/Fall-Detection.png")
+            elif obj == self.ui.pushButton_Fall_Images:
+                self.show_image("newui/images/images.png")
+        elif event.type() == QtCore.QEvent.Leave:
+            self.show_image("newui/images/yolo.png")
+        return super().eventFilter(obj, event)
+
+    def show_image(self, image_path):
+        pixmap = QPixmap(image_path)
+        self.ui.Home_label.setPixmap(pixmap)
+        self.ui.Home_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.ui.Home_label.setScaledContents(True)  # 让 QLabel 自动缩放以适应图片大小
+        self.ui.Home_label.setMinimumSize(1, 1)  # 设置 QLabel 的最小尺寸以避免折叠
+
+    def fall_detection(self):
+        self.win = Ui_MainWindow()
+
+    def fall_images(self):
+        url = "http://127.0.0.1:8000/file/fall_images"
+        response = requests.get(url=url)
+        if response.json()["status_code"] == 200:
+            print(response.json())
+            uri_list = response.json()["uri_list"]
+            url_list = ["http://127.0.0.1:8000/file/" + uri + "/uri" for uri in uri_list]
+            print(url_list)
+        self.win = FallImagesWindow(url_list)
+        # self.close()
+        # "http://127.0.0.1:8000/file//file/minio/202404/04/040909187098.jpg/uri",
+
+
+class FallImagesWindow(Ui_FallimagesWindow):
+    def __init__(self, image_urls):
+        super().__init__()
+        self.ui = Ui_FallimagesWindow()
+        self.ui.setupUi(self)
+        # 隐藏多余的窗体
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.ui.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # 禁用水平滚动条
+        # 加载图片
+        self.load_images(image_urls)
+        self.show()
+
+    def load_images(self, image_urls):
+        row = 0
+        col = 0
+        for url in image_urls:
+            pixmap = self.load_image_from_url(url)
+            if pixmap:
+                # 创建垂直布局
+                layout = QVBoxLayout()
+
+                # 添加图片到布局
+                label = QLabel()
+                label.setFixedSize(200, 200)  # 设置固定大小为200x200像素
+                label.setPixmap(pixmap.scaled(label.size(), Qt.KeepAspectRatio))
+                label.setAlignment(Qt.AlignCenter)  # 设置居中对齐
+                layout.addWidget(label)
+
+                # 添加图片名字到布局
+                name_label = QLabel(url.split('/')[-2])  # 从URL中获取图片名字
+                name_label.setAlignment(Qt.AlignCenter)  # 设置居中对齐
+                name_label.setWordWrap(True)  # 自动换行
+                name_label.setMaximumWidth(200)  # 设置最大宽度，超出部分自动隐藏
+                layout.addWidget(name_label)
+
+                # 添加一个垂直的空白项，使得图片名字距离图片边框下方的间距不会太大
+                spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+                layout.addItem(spacer)
+
+                # 将布局添加到 gridLayout
+                self.ui.gridLayout.addLayout(layout, row, col)
+
+                col += 1
+                if col == 3:  # 每行展示三张图片
+                    col = 0
+                    row += 1  # 换行
+
+    def load_image_from_url(self, url):
+        response = requests.get(url)
+        if response.status_code == 200:
+            image = QtGui.QImage()
+            image.loadFromData(response.content)
+            pixmap = QtGui.QPixmap.fromImage(image)
+            return pixmap  # 不再进行缩放
+        else:
+            print("Failed to load image from URL:", url)
+            return None
+
+
 class LoginWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -418,7 +545,7 @@ class LoginWindow(QMainWindow):
         }
         response = requests.post(url=url, json=payload)
         if response.json()["status_code"] == 200:
-            self.win = Ui_MainWindow()
+            self.win = HomeWindow()
             self.close()
         elif response.json()["status_code"] == 404:
             QMessageBox.warning(self, "登录失败", "用户不存在！", QMessageBox.Ok)
