@@ -1,4 +1,6 @@
 import os
+import re
+
 import cv2
 import sys
 import time
@@ -9,11 +11,11 @@ import threading
 from newui import res_rc
 from pathlib import Path
 from PyQt5.QtGui import *
-from PyQt5.QtCore import Qt, QObject, pyqtSignal
+from PyQt5.QtCore import Qt, QObject, pyqtSignal, QTimer
 from threading import Thread
 import torch.backends.cudnn as cudnn
 from PyQt5 import QtCore, QtGui, QtWidgets
-from Ui_Window import Ui_FallDetectWindow, Ui_LoginWindow, Ui_HomeWindow, Ui_FallimagesWindow
+from Ui_Window import Ui_FallDetectWindow, Ui_LoginWindow, Ui_HomeWindow, Ui_FallimagesWindow, Ui_BindEmailWindow
 from PyQt5.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QLabel, QSizePolicy, QVBoxLayout, QSpacerItem
 
 from sendEmail import send_email
@@ -34,7 +36,11 @@ from utils.torch_utils import load_classifier, select_device, time_sync
 
 
 class UploadManager(QObject):
-    upload_completed = pyqtSignal(str)  # 定义一个上传完成的信号，传递上传的 URL
+    upload_completed = pyqtSignal(str, str)  # 定义一个上传完成的信号，传递上传的 URL
+
+    def __init__(self, user_items):
+        super().__init__()
+        self.user_items = user_items
 
     def upload_image_to_minio(self, base64_img):
         url = "http://127.0.0.1:8000/file/MinioFileBytes"
@@ -47,16 +53,16 @@ class UploadManager(QObject):
             uri = data["uri"]
             url = "http://127.0.0.1:8000/file" + uri + "/uri"
             print("Image uploaded to Minio")
-            self.upload_completed.emit(url)  # 上传完成，发射信号，传递上传的 URL
+            self.upload_completed.emit(url, self.user_items["email"])  # 上传完成，发射信号，传递上传的 URL
         else:
             print("Failed to upload image to Minio")
 
 
 @torch.no_grad()
 class Ui_MainWindow(Ui_FallDetectWindow):
-    def __init__(self, parent=None):
+    def __init__(self, user_items):
         super().__init__()
-
+        self.user_items = user_items
         self.fall_detected_time = None  # 记录跌倒检测时间
 
         self.device = '0'
@@ -198,16 +204,16 @@ class Ui_MainWindow(Ui_FallDetectWindow):
                          kwargs={"weights": self.weights, "source": "0", "nosave": True, "view_img": True})
         thread2.start()
 
-    def sendEmail(self, image_url):
+    def sendEmail(self, image_url, receiver):
         print("准备发送邮件")
-        send_email_thread = threading.Thread(target=send_email, args=(image_url,))
+        send_email_thread = threading.Thread(target=send_email, args=(image_url, receiver,))
         send_email_thread.start()
 
     def detect_and_upload(self, im0):
         _, img_buffer = cv2.imencode('.jpg', im0)
         base64_img = base64.b64encode(img_buffer).decode('utf-8')
         # 创建 UploadManager 实例
-        upload_manager = UploadManager()
+        upload_manager = UploadManager(self.user_items)
         # 连接信号和槽
         upload_manager.upload_completed.connect(self.sendEmail)
         # 在子线程中执行上传操作
@@ -231,8 +237,8 @@ class Ui_MainWindow(Ui_FallDetectWindow):
             augment=False,  # augmented inference
             visualize=False,  # visualize features
             update=False,  # update all models
-            # project=ROOT / 'runs/detect',  # save results to project/name
-            project=None,  # save results to project/name
+            project=ROOT / 'runs/detect',  # save results to project/name
+            # project=None,  # save results to project/name
             name='exp',  # save results to project/name
             exist_ok=False,  # existing project/name ok, do not increment
             line_thickness=3,  # bounding box thickness (pixels)
@@ -402,9 +408,10 @@ class Ui_MainWindow(Ui_FallDetectWindow):
             self.initLogo()
 
 
-class HomeWindow(Ui_HomeWindow):
-    def __init__(self, parent=None):
+class HomeWindow(QMainWindow):
+    def __init__(self, user_items):
         super().__init__()
+        self.user_items = user_items
         self.ui = Ui_HomeWindow()
         self.ui.setupUi(self)
         # 隐藏多余的窗体
@@ -412,10 +419,12 @@ class HomeWindow(Ui_HomeWindow):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.ui.pushButton_Fall_Detection.installEventFilter(self)
         self.ui.pushButton_Fall_Images.installEventFilter(self)
+        self.ui.pushButton_Bind_Email.installEventFilter(self)
         self.current_image_path = ""
         self.show_image("newui/images/yolo.png")
         self.ui.pushButton_Fall_Detection.clicked.connect(self.fall_detection)
         self.ui.pushButton_Fall_Images.clicked.connect(self.fall_images)
+        self.ui.pushButton_Bind_Email.clicked.connect(self.bind_email)
         self.show()
 
     def eventFilter(self, obj, event):
@@ -424,6 +433,8 @@ class HomeWindow(Ui_HomeWindow):
                 self.show_image("newui/images/Fall-Detection.png")
             elif obj == self.ui.pushButton_Fall_Images:
                 self.show_image("newui/images/images.png")
+            elif obj == self.ui.pushButton_Bind_Email:
+                self.show_image("newui/images/eamil.png")
         elif event.type() == QtCore.QEvent.Leave:
             self.show_image("newui/images/yolo.png")
         return super().eventFilter(obj, event)
@@ -436,9 +447,11 @@ class HomeWindow(Ui_HomeWindow):
         self.ui.Home_label.setMinimumSize(1, 1)  # 设置 QLabel 的最小尺寸以避免折叠
 
     def fall_detection(self):
-        self.win = Ui_MainWindow()
+        # print(self.user_items)
+        self.win = Ui_MainWindow(self.user_items)
 
     def fall_images(self):
+        # print(self.user_items)
         url = "http://127.0.0.1:8000/file/fall_images"
         response = requests.get(url=url)
         if response.json()["status_code"] == 200:
@@ -447,68 +460,109 @@ class HomeWindow(Ui_HomeWindow):
             url_list = ["http://127.0.0.1:8000/file/" + uri + "/uri" for uri in uri_list]
             print(url_list)
         self.win = FallImagesWindow(url_list)
+
+    def bind_email(self):
+        # print(self.user_items)
+        self.win = BindEmailWindow(self.user_items)
         # self.close()
         # "http://127.0.0.1:8000/file//file/minio/202404/04/040909187098.jpg/uri",
 
 
-class FallImagesWindow(Ui_FallimagesWindow):
-    def __init__(self, image_urls):
+class BindEmailWindow(Ui_BindEmailWindow):
+    def __init__(self, user_items):
         super().__init__()
-        self.ui = Ui_FallimagesWindow()
+        self.ui = Ui_BindEmailWindow()
+        self.user_items = user_items
+        self.valid_code = None
+        self.timer = QTimer()  # 创建定时器
         self.ui.setupUi(self)
         # 隐藏多余的窗体
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.ui.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # 禁用水平滚动条
-        # 加载图片
-        self.load_images(image_urls)
+        self.ui.pushButton_Send_ValidCode.clicked.connect(self.send_valid_code)
+        self.ui.pushButton_Sure_Bind.clicked.connect(self.bind_email)
         self.show()
 
-    def load_images(self, image_urls):
-        row = 0
-        col = 0
-        for url in image_urls:
-            pixmap = self.load_image_from_url(url)
-            if pixmap:
-                # 创建垂直布局
-                layout = QVBoxLayout()
-
-                # 添加图片到布局
-                label = QLabel()
-                label.setFixedSize(200, 200)  # 设置固定大小为200x200像素
-                label.setPixmap(pixmap.scaled(label.size(), Qt.KeepAspectRatio))
-                label.setAlignment(Qt.AlignCenter)  # 设置居中对齐
-                layout.addWidget(label)
-
-                # 添加图片名字到布局
-                name_label = QLabel(url.split('/')[-2])  # 从URL中获取图片名字
-                name_label.setAlignment(Qt.AlignCenter)  # 设置居中对齐
-                name_label.setWordWrap(True)  # 自动换行
-                name_label.setMaximumWidth(200)  # 设置最大宽度，超出部分自动隐藏
-                layout.addWidget(name_label)
-
-                # 添加一个垂直的空白项，使得图片名字距离图片边框下方的间距不会太大
-                spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-                layout.addItem(spacer)
-
-                # 将布局添加到 gridLayout
-                self.ui.gridLayout.addLayout(layout, row, col)
-
-                col += 1
-                if col == 3:  # 每行展示三张图片
-                    col = 0
-                    row += 1  # 换行
-
-    def load_image_from_url(self, url):
-        response = requests.get(url)
-        if response.status_code == 200:
-            image = QtGui.QImage()
-            image.loadFromData(response.content)
-            pixmap = QtGui.QPixmap.fromImage(image)
-            return pixmap  # 不再进行缩放
+    def validate_email(self, email):
+        # 邮箱的正则表达式模式
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        # 使用正则表达式模式进行匹配
+        if re.match(pattern, email):
+            return True
         else:
-            print("Failed to load image from URL:", url)
-            return None
+            return False
+
+    def send_valid_code(self):
+        email = self.ui.lineEdit_Email.text().replace(" ", "")
+        if not email:
+            QMessageBox.warning(self, "提示", "邮箱不能空！", QMessageBox.Ok)
+            return
+        if self.validate_email(email):
+            print(f"邮箱 '{email}' 格式正确")
+            self.send_valid_code_interface(email)
+            self.ui.pushButton_Send_ValidCode.setEnabled(False)  # 点击后禁用按钮
+            self.start_timer()  # 开始定时器
+        else:
+            print(f"邮箱 '{email}' 格式不正确")
+            QMessageBox.warning(self, "提示", f"邮箱 '{email}' 格式不正确", QMessageBox.Ok)
+
+    def send_valid_code_interface(self, email):
+        url = "http://127.0.0.1:8000/email"
+        payload = {
+            "email": email,
+            "user_id": self.user_items["id"],
+        }
+        try:
+            response = requests.post(url=url, json=payload)
+            # 接收验证码，保存到类中
+            self.valid_code = response.json()["valid_code"]
+            print("发送验证码成功！")
+            print("valid_code: ", self.valid_code)
+        except Exception as e:
+            print("发送验证码失败！详细情况请看接口")
+            QMessageBox.warning(self, "提示", "发送验证码失败！详细情况请看接口！", QMessageBox.Ok)
+            print(e)
+
+    def bind_email(self):
+        email = self.ui.lineEdit_Email.text().replace(" ", "")
+        valid_code = self.ui.lineEdit_ValidCode.text().replace(" ", "")
+        if not email or not valid_code:
+            QMessageBox.warning(self, "提示", "邮箱或验证码不能为空！", QMessageBox.Ok)
+            return
+        if valid_code == self.valid_code:
+            self.bind_email_interface(email)
+        else:
+            QMessageBox.warning(self, "提示", "验证码错误！", QMessageBox.Ok)
+
+    def bind_email_interface(self, email):
+        url = "http://127.0.0.1:8000/email/bind"
+        payload = {
+            "email": email,
+            "user_id": self.user_items["id"],
+        }
+        try:
+            response = requests.put(url=url, json=payload)
+            print("用户邮箱绑定成功！")
+            print(response.json())
+            QMessageBox.warning(self, "提示", "用户邮箱绑定成功！", QMessageBox.Ok)
+            self.close()
+        except Exception as e:
+            print("绑定邮箱失败，详细情况请看接口")
+            print(e)
+
+    def start_timer(self):
+        self.remaining_time = 60  # 设置倒计时为60秒
+        self.timer.timeout.connect(self.update_timer)  # 绑定定时器到更新倒计时的方法
+        self.timer.start(1000)  # 启动定时器，每隔1秒执行一次
+
+    def update_timer(self):
+        self.remaining_time -= 1
+        if self.remaining_time == 0:
+            self.timer.stop()  # 停止定时器
+            self.ui.pushButton_Send_ValidCode.setEnabled(True)  # 恢复按钮可用
+            self.ui.pushButton_Send_ValidCode.setText("发送验证码")  # 恢复按钮文字
+        else:
+            self.ui.pushButton_Send_ValidCode.setText(f"请 {self.remaining_time}s 后再使用")  # 更新按钮文字为倒计时
 
 
 class LoginWindow(QMainWindow):
@@ -545,8 +599,154 @@ class LoginWindow(QMainWindow):
             "password": password,
         }
         response = requests.post(url=url, json=payload)
+        user_items = response.json()
+        print(response.json())
         if response.json()["status_code"] == 200:
-            self.win = HomeWindow()
+            self.win = HomeWindow(user_items)
+            self.close()
+        elif response.json()["status_code"] == 404:
+            print("登录失败，用户不存在")
+            QMessageBox.warning(self, "登录失败", "用户不存在！", QMessageBox.Ok)
+        elif response.json()["status_code"] == 401:
+            print("登录失败，账号或密码错误")
+            QMessageBox.warning(self, "登录失败", "账号或密码错误！", QMessageBox.Ok)
+        else:
+            QMessageBox.warning(self, "登录失败", "后端接口服务异常，请检查后端程序！", QMessageBox.Ok)
+
+    def register(self):
+        username = self.ui.lineEdit_R_Account.text().replace(" ", "")
+        password1 = self.ui.lineEdit_R_Password1.text().replace(" ", "")
+        password2 = self.ui.lineEdit_R_Password2.text().replace(" ", "")
+        if username == "" or password1 == "" or password2 == "":
+            QMessageBox.warning(self, "注册失败", "账号或密码是必要的！", QMessageBox.Ok)
+            return
+        if password1 != password2:
+            QMessageBox.warning(self, "注册失败", "两次输入的密码不一致！！", QMessageBox.Ok)
+
+        url = "http://127.0.0.1:8000/user"
+        payload = {
+            "username": username,
+            "password": password1,
+        }
+        response = requests.post(url=url, json=payload)
+        print(response.json())
+        if response.json()["exist"] == "True":
+            QMessageBox.warning(self, "注册失败", "该用户已经存在！", QMessageBox.Ok)
+            return
+        else:
+            QMessageBox.warning(self, "注册成功", "请准备登录！", QMessageBox.Ok)
+            self.ui.lineEdit_R_Account.clear()
+            self.ui.lineEdit_R_Password1.clear()
+            self.ui.lineEdit_R_Password2.clear()
+            self.ui.pushButton_Login.click()
+
+
+class loadManager(QObject):
+    load_completed = pyqtSignal(QPixmap, str, int, int)  # 定义一个上传完成的信号，传递上传的 URL
+
+    def load_image_from_url(self, url, row, col):
+        response = requests.get(url)
+        if response.status_code == 200:
+            image = QtGui.QImage()
+            image.loadFromData(response.content)
+            pixmap = QtGui.QPixmap.fromImage(image)
+            self.load_completed.emit(pixmap, url, row, col)  # 上传完成，发射信号，传递上传的 URL
+        else:
+            print("Failed to load image from URL:", url)
+            return None
+
+
+class FallImagesWindow(Ui_FallimagesWindow):
+    def __init__(self, image_urls):
+        super().__init__()
+        self.row = 0
+        self.col = 0
+        self.ui = Ui_FallimagesWindow()
+        self.ui.setupUi(self)
+        # 隐藏多余的窗体
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.ui.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # 禁用水平滚动条
+        # 加载图片
+        self.show()
+        self.load_images(image_urls)
+
+    def load_images(self, image_urls):
+        for url in image_urls:
+            load_manager = loadManager()
+            # 连接信号和槽
+            load_manager.load_completed.connect(self.setlay)
+            # 在子线程中执行上传操作
+            threading.Thread(target=load_manager.load_image_from_url, args=(url, self.row, self.col)).start()
+            self.col += 1
+            if self.col == 3:
+                self.col = 0
+                self.row += 1
+
+    def setlay(self, pixmap, url, row, col):
+        if pixmap:
+            # 创建垂直布局
+            layout = QVBoxLayout()
+
+            # 添加图片到布局
+            label = QLabel()
+            label.setFixedSize(200, 200)  # 设置固定大小为200x200像素
+            label.setPixmap(pixmap.scaled(label.size(), Qt.KeepAspectRatio))
+            label.setAlignment(Qt.AlignCenter)  # 设置居中对齐
+            layout.addWidget(label)
+
+            # 添加图片名字到布局
+            name_label = QLabel(url.split('/')[-2])  # 从URL中获取图片名字
+            name_label.setAlignment(Qt.AlignCenter)  # 设置居中对齐
+            name_label.setWordWrap(True)  # 自动换行
+            name_label.setMaximumWidth(200)  # 设置最大宽度，超出部分自动隐藏
+            layout.addWidget(name_label)
+
+            # 添加一个垂直的空白项，使得图片名字距离图片边框下方的间距不会太大
+            spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+            layout.addItem(spacer)
+
+            # 将布局添加到 gridLayout
+            self.ui.gridLayout.addLayout(layout, row, col)
+
+
+class LoginWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.ui = Ui_LoginWindow()
+        self.ui.setupUi(self)
+        # 隐藏多余的窗体
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        # 添加阴影
+        self.shadow = QtWidgets.QGraphicsDropShadowEffect(self)
+        self.shadow.setOffset(0, 0)
+        self.shadow.setBlurRadius(15)
+        self.shadow.setColor(Qt.black)
+        self.ui.frame.setGraphicsEffect(self.shadow)
+        # 登录点击展示窗口
+        self.ui.pushButton_Login.clicked.connect(lambda: self.ui.stackedWidget_2.setCurrentIndex(1))
+        # 注册点击展示窗口
+        self.ui.pushButton_Register.clicked.connect(lambda: self.ui.stackedWidget_2.setCurrentIndex(0))
+        self.ui.pushButton_L_Sure.clicked.connect(self.login_in)
+        self.ui.pushButton_R_Sure.clicked.connect(self.register)
+        self.show()
+
+    def login_in(self):
+        username = self.ui.lineEdit_L_Account.text().replace(" ", "")
+        password = self.ui.lineEdit_L_Password.text().replace(" ", "")
+        if username == "" or password == "":
+            QMessageBox.warning(self, "登录失败", "账号或密码是必要的！", QMessageBox.Ok)
+            return
+        url = "http://127.0.0.1:8000/user/login"
+        payload = {
+            "username": username,
+            "password": password,
+        }
+        response = requests.post(url=url, json=payload)
+        user_items = response.json()
+        if response.json()["status_code"] == 200:
+            self.win = HomeWindow(user_items)
             self.close()
         elif response.json()["status_code"] == 404:
             QMessageBox.warning(self, "登录失败", "用户不存在！", QMessageBox.Ok)

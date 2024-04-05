@@ -7,9 +7,12 @@ from email.header import Header
 import requests
 
 
-def send_email(image_url):
+def send_email(image_url, receiver):
+    if not receiver:
+        print("该用户未绑定邮箱！无法发送邮件！")
+        return
     sender = 'clx20020905@foxmail.com'
-    receivers = ['2050669795@qq.com']  # 接收邮箱
+    receivers = [receiver]  # 接收邮箱
     auth_code = "vujkrnexykzvfcfd"  # 授权码
 
     # 创建一个多部分消息对象
@@ -29,7 +32,7 @@ def send_email(image_url):
         # 添加图片消息
         image_data = response.content
         image = MIMEImage(image_data)
-        image.add_header('Content-Disposition', 'attachment', filename="image.jpg")
+        image.add_header('Content-Disposition', 'attachment', filename="fall.jpg")
         message.attach(image)
     else:
         print("Failed to load image from URL")

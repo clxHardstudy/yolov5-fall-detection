@@ -1,5 +1,7 @@
 <RCC>
   <qresource prefix="icons">
+    <file>邮箱.png</file>
+    <file>用户.png</file>
     <file>登录.png</file>
     <file>跌倒.png</file>
     <file>关闭.png</file>
